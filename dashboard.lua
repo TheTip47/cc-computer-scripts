@@ -33,10 +33,10 @@ local function renderDashboard()
     display.write("==================================================\n")
     display.setTextColor(colors.white)
     
-    -- Table Column Headers (Total width: 50 characters to fit 51-col displays)
+    -- Table Column Headers (Total width: 50 characters)
     display.setCursorPos(1, 5)
     display.setTextColor(colors.cyan)
-    display.write(string.format("%-10s %-8s %-15s %-14s\n", "TURTLE", "FUEL", "POS (X,Y,Z)", "STATUS"))
+    display.write(string.format("%-8s %-7s %-11s %-7s %-13s\n", "TURTLE", "FUEL", "POS(X,Y,Z)", "ITEMS", "STATUS"))
     display.setTextColor(colors.gray)
     display.write("--------------------------------------------------\n")
     
@@ -46,7 +46,7 @@ local function renderDashboard()
         count = count + 1
         display.setCursorPos(1, line)
         
-        -- Fuel color warning & formatting (supports integer and "unlimited")
+        -- Fuel color warning & formatting
         local fuelStr = ""
         if type(data.fuel) == "number" then
             fuelStr = string.format("%d", data.fuel)
@@ -60,18 +60,32 @@ local function renderDashboard()
             display.setTextColor(colors.green)
         end
         
-        local labelStr = tostring(data.label):sub(1, 10)
-        local posStr = string.format("%d,%d,%d", data.x, data.y, data.z):sub(1, 15)
-        local statusStr = tostring(data.status):sub(1, 14)
+        -- Items formatting (Format integers or abbreviate thousands above 10k)
+        local itemsCount = data.items or 0
+        local itemsStr = ""
+        if itemsCount >= 100000 then
+            itemsStr = string.format("%dk", math.floor(itemsCount / 1000))
+        elseif itemsCount >= 10000 then
+            itemsStr = string.format("%.1fk", itemsCount / 1000)
+        else
+            itemsStr = string.format("%d", itemsCount)
+        end
+
+        local labelStr = tostring(data.label):sub(1, 8)
+        local posStr = string.format("%d,%d,%d", data.x, data.y, data.z):sub(1, 11)
+        local statusStr = tostring(data.status):sub(1, 13)
         
-        display.write(string.format("%-10s ", labelStr))
-        display.write(string.format("%-8s ", fuelStr:sub(1, 8)))
+        display.write(string.format("%-8s ", labelStr))
+        display.write(string.format("%-7s ", fuelStr:sub(1, 7)))
         
         display.setTextColor(colors.white)
-        display.write(string.format("%-15s ", posStr))
+        display.write(string.format("%-11s ", posStr))
+        
+        display.setTextColor(colors.lightBlue)
+        display.write(string.format("%-7s ", itemsStr:sub(1, 7)))
         
         display.setTextColor(colors.yellow)
-        display.write(string.format("%-14s", statusStr))
+        display.write(string.format("%-13s", statusStr))
         
         line = line + 1
     end
