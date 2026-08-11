@@ -1,14 +1,26 @@
 -- =========================================================
 -- CC: Tweaked - Central Telemetry Dashboard (dashboard.lua)
--- Setup: Place on Advanced Computer with Wireless Modem.
+-- Setup: Place on Advanced Computer with Wireless/Ender Modem.
 -- Optional: Connect an Advanced Monitor on any side.
 -- =========================================================
 
-local modem = peripheral.find("modem")
-if modem then
-    rednet.open(peripheral.getName(modem))
-else
-    error("Error: No Wireless Modem found on this computer!")
+-- Explicitly find and open Wireless/Ender Modem (ignoring Wired Modems)
+local function openWirelessModem()
+    for _, side in ipairs(peripheral.getNames()) do
+        if peripheral.getType(side) == "modem" then
+            local m = peripheral.wrap(side)
+            if m and m.isWireless() then
+                rednet.open(side)
+                return side
+            end
+        end
+    end
+    return nil
+end
+
+local activeModemSide = openWirelessModem()
+if not activeModemSide then
+    error("Error: No Wireless or Ender Modem found on this computer!")
 end
 
 -- Detect optional connected Monitor
@@ -21,6 +33,29 @@ end
 
 local activeTurtles = {}
 
+-----------------------------------------------------------
+-- Item Table Formatter
+-----------------------------------------------------------
+local function formatItemTable(tbl, maxLen)
+    if not tbl or type(tbl) ~= "table" then return "(none)" end
+    local parts = {}
+    for name, count in pairs(tbl) do
+        if count and count > 0 then
+            table.insert(parts, string.format("%s x%d", tostring(name), count))
+        end
+    end
+    if #parts == 0 then return "(empty)" end
+    table.sort(parts)
+    local str = table.concat(parts, ", ")
+    if #str > maxLen then
+        return str:sub(1, maxLen - 3) .. "..."
+    end
+    return str
+end
+
+-----------------------------------------------------------
+-- Dashboard Renderer
+-----------------------------------------------------------
 local function renderDashboard()
     display.setBackgroundColor(colors.black)
     display.clear()
@@ -87,7 +122,21 @@ local function renderDashboard()
         display.setTextColor(colors.yellow)
         display.write(string.format("%-13s", statusStr))
         
-        line = line + 1
+        -- Live Inventory breakdown line
+        display.setCursorPos(1, line + 1)
+        display.setTextColor(colors.cyan)
+        display.write("  Inv: ")
+        display.setTextColor(colors.white)
+        display.write(formatItemTable(data.inventory, 43))
+        
+        -- Total Deposited Chest breakdown line
+        display.setCursorPos(1, line + 2)
+        display.setTextColor(colors.lightBlue)
+        display.write("  Chest: ")
+        display.setTextColor(colors.gray)
+        display.write(formatItemTable(data.deposited, 41))
+        
+        line = line + 3
     end
     
     if count == 0 then
@@ -112,11 +161,11 @@ while true do
             renderDashboard()
         end
     elseif event == "timer" and p1 == timerId then
-        -- Prune turtles inactive for over 15 seconds
+        -- Prune turtles inactive for over 60 seconds
         local now = os.clock()
         local changed = false
         for id, data in pairs(activeTurtles) do
-            if data.lastSeen and (now - data.lastSeen > 15) then
+            if data.lastSeen and (now - data.lastSeen > 60) then
                 activeTurtles[id] = nil
                 changed = true
             end
