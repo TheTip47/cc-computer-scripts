@@ -1,6 +1,6 @@
 -- Snake Game for 3x3 Advanced Monitor
 -- Target Platform: CC: Tweaked 1.21.1 / CraftOS
--- Supports Keyboard Controls (WASD/Arrows) and Touchscreen Taps
+-- Supports Keyboard Controls (WASD/Arrows) and On-Screen Touch Arrow Buttons
 
 local mon = peripheral.find("monitor")
 if not mon then
@@ -14,6 +14,16 @@ end
 -- Monitor Initialization
 mon.setTextScale(0.5)
 local w, h = mon.getSize()
+
+-- Dynamic Control Bar Boundaries
+local ctrlYStart = h - 3
+local playfieldH = ctrlYStart - 1
+
+-- Button X-ranges
+local btnLeft = { x1 = 2, x2 = math.floor(w * 0.24) }
+local btnUp   = { x1 = math.floor(w * 0.26), x2 = math.floor(w * 0.49) }
+local btnDown = { x1 = math.floor(w * 0.51), x2 = math.floor(w * 0.74) }
+local btnRight= { x1 = math.floor(w * 0.76), x2 = w - 1 }
 
 -- Game State Variables
 local snake = {}
@@ -35,11 +45,28 @@ local function drawCenteredText(y, text, textColor, bgColor)
     mon.write(text)
 end
 
+-- Helper: Render text aligned in bounding box
+local function drawBoxText(x1, x2, y, text, textColor, bgColor)
+    mon.setTextColor(textColor)
+    mon.setBackgroundColor(bgColor)
+    local width = x2 - x1 + 1
+    local pad = math.floor((width - #text) / 2)
+    if pad < 0 then pad = 0 end
+    mon.setCursorPos(x1, y)
+    local str = string.rep(" ", pad) .. text
+    if #str < width then
+        str = str .. string.rep(" ", width - #str)
+    else
+        str = string.sub(str, 1, width)
+    end
+    mon.write(str)
+end
+
 -- Helper: Spawn food away from snake body
 local function spawnFood()
     while true do
         local fx = math.random(2, w - 1)
-        local fy = math.random(4, h - 1)
+        local fy = math.random(3, playfieldH - 1)
         local occupied = false
         for _, seg in ipairs(snake) do
             if seg.x == fx and seg.y == fy then
@@ -77,16 +104,50 @@ local function drawHeader()
     mon.write(string.rep(" ", w))
 end
 
+-- Render On-Screen Touch Control Buttons at Bottom
+local function drawTouchControls()
+    -- Control Bar Background Separator
+    mon.setBackgroundColor(colors.gray)
+    mon.setCursorPos(1, ctrlYStart - 1)
+    mon.write(string.rep(" ", w))
+
+    -- Clear control bar rows
+    mon.setBackgroundColor(colors.black)
+    for row = ctrlYStart, h do
+        mon.setCursorPos(1, row)
+        mon.write(string.rep(" ", w))
+    end
+
+    local midRow = ctrlYStart + 1
+
+    -- Render 4 Touch Arrow Key Buttons
+    drawBoxText(btnLeft.x1, btnLeft.x2, midRow - 1, "┌───────┐", colors.cyan, colors.black)
+    drawBoxText(btnLeft.x1, btnLeft.x2, midRow,     "│ ◄ LEFT│", colors.white, colors.blue)
+    drawBoxText(btnLeft.x1, btnLeft.x2, midRow + 1, "└───────┘", colors.cyan, colors.black)
+
+    drawBoxText(btnUp.x1, btnUp.x2, midRow - 1,     "┌───────┐", colors.lime, colors.black)
+    drawBoxText(btnUp.x1, btnUp.x2, midRow,         "│  ▲ UP │", colors.white, colors.green)
+    drawBoxText(btnUp.x1, btnUp.x2, midRow + 1,     "└───────┘", colors.lime, colors.black)
+
+    drawBoxText(btnDown.x1, btnDown.x2, midRow - 1, "┌───────┐", colors.yellow, colors.black)
+    drawBoxText(btnDown.x1, btnDown.x2, midRow,     "│ ▼ DOWN│", colors.black, colors.yellow)
+    drawBoxText(btnDown.x1, btnDown.x2, midRow + 1, "└───────┘", colors.yellow, colors.black)
+
+    drawBoxText(btnRight.x1, btnRight.x2, midRow - 1, "┌───────┐", colors.magenta, colors.black)
+    drawBoxText(btnRight.x1, btnRight.x2, midRow,     "│ ► RIGHT│", colors.white, colors.purple)
+    drawBoxText(btnRight.x1, btnRight.x2, midRow + 1, "└───────┘", colors.magenta, colors.black)
+end
+
 -- Render Border Walls
 local function drawBorders()
     mon.setBackgroundColor(colors.gray)
     
-    -- Bottom wall
-    mon.setCursorPos(1, h)
+    -- Bottom playfield wall
+    mon.setCursorPos(1, playfieldH)
     mon.write(string.rep(" ", w))
     
     -- Side walls
-    for y = 3, h - 1 do
+    for y = 3, playfieldH - 1 do
         mon.setCursorPos(1, y)
         mon.write(" ")
         mon.setCursorPos(w, y)
@@ -100,7 +161,7 @@ local function drawMenu()
     mon.clear()
     
     drawCenteredText(math.floor(h / 3), "=== SNAKE ===", colors.yellow, colors.black)
-    drawCenteredText(math.floor(h / 3) + 2, "3x3 Monitor Edition", colors.lightGray, colors.black)
+    drawCenteredText(math.floor(h / 3) + 2, "3x3 Monitor Touch Edition", colors.lightGray, colors.black)
     
     -- Start Button Graphic
     local btnY = math.floor(h / 2) + 2
@@ -108,16 +169,16 @@ local function drawMenu()
     drawCenteredText(btnY,     " |  TAP TO START | ", colors.white, colors.green)
     drawCenteredText(btnY + 1, " +--------------+ ", colors.green, colors.black)
     
-    drawCenteredText(h - 2, "Use WASD / Arrows or Touch Screen", colors.gray, colors.black)
+    drawCenteredText(h - 2, "Use WASD / Arrows or On-Screen Touch Buttons", colors.gray, colors.black)
 end
 
 -- Render Game Over Screen
 local function drawGameOver()
-    local midY = math.floor(h / 2)
-    drawCenteredText(midY - 3, " GAMEOVER ", colors.white, colors.red)
-    drawCenteredText(midY - 1, "Final Score: " .. tostring(score), colors.yellow, colors.black)
+    local midY = math.floor(h / 2) - 2
+    drawCenteredText(midY - 2, " GAMEOVER ", colors.white, colors.red)
+    drawCenteredText(midY, "Final Score: " .. tostring(score), colors.yellow, colors.black)
     
-    local btnY = midY + 2
+    local btnY = midY + 3
     drawCenteredText(btnY - 1, " +---------------+ ", colors.cyan, colors.black)
     drawCenteredText(btnY,     " | PLAY AGAIN    | ", colors.black, colors.cyan)
     drawCenteredText(btnY + 1, " +---------------+ ", colors.cyan, colors.black)
@@ -126,7 +187,7 @@ end
 -- Initialize New Game
 local function resetGame()
     local startX = math.floor(w / 2)
-    local startY = math.floor(h / 2)
+    local startY = math.floor(playfieldH / 2)
     
     snake = {
         { x = startX, y = startY },
@@ -144,6 +205,7 @@ local function resetGame()
     
     drawHeader()
     drawBorders()
+    drawTouchControls()
     spawnFood()
     
     -- Initial Food Render
@@ -178,8 +240,8 @@ local function updateGame()
         newHead.x = newHead.x + 1
     end
     
-    -- Wall Collision (Y < 3 is Header, Y >= h is Bottom Wall, X <= 1 or X >= w are Side Walls)
-    if newHead.x <= 1 or newHead.x >= w or newHead.y <= 2 or newHead.y >= h then
+    -- Wall Collision (Y < 3 is Header, Y >= playfieldH is Bottom Playfield Wall, X <= 1 or X >= w are Side Walls)
+    if newHead.x <= 1 or newHead.x >= w or newHead.y <= 2 or newHead.y >= playfieldH then
         if score > highScore then highScore = score end
         gameState = "GAMEOVER"
         drawGameOver()
@@ -245,6 +307,21 @@ local function handleTouch(tx, ty)
     end
     
     if gameState == "PLAYING" then
+        -- Check if tap was in the Bottom Control Bar
+        if ty >= ctrlYStart - 1 then
+            if tx >= btnLeft.x1 and tx <= btnLeft.x2 and dir ~= "RIGHT" then
+                nextDir = "LEFT"
+            elseif tx >= btnUp.x1 and tx <= btnUp.x2 and dir ~= "DOWN" then
+                nextDir = "UP"
+            elseif tx >= btnDown.x1 and tx <= btnDown.x2 and dir ~= "UP" then
+                nextDir = "DOWN"
+            elseif tx >= btnRight.x1 and tx <= btnRight.x2 and dir ~= "LEFT" then
+                nextDir = "RIGHT"
+            end
+            return
+        end
+        
+        -- Fallback: Tap direction relative to head if tapped on game field
         local head = snake[1]
         local dx = tx - head.x
         local dy = ty - head.y
@@ -258,7 +335,7 @@ local function handleTouch(tx, ty)
         else
             if dy > 0 and dir ~= "UP" then
                 nextDir = "DOWN"
-            elseif dy < 0 and dir ~= "DOWN" then
+            elseif dy < 0 and dir ~= "UP" then
                 nextDir = "UP"
             end
         end
@@ -307,6 +384,9 @@ while true do
         mon.clear()
         mon.setCursorPos(1, 1)
         print("Game exited.")
+        break
+    end
+end
         break
     end
 end
