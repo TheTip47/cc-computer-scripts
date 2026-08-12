@@ -1,10 +1,15 @@
 -- FULL FILE: club.lua
--- CC:HQ Speakers Interactive Single/Multi-Track Club Player with Touch UI (RAM Direct Stream)
+-- CC:HQ Speakers Interactive Single/Multi-Track Club Player with Touch UI & Auto-Cleanup
 -- Target Environment: ATM10 (Minecraft 1.21.1 / NeoForge)
 -- Repository Host: TheTip47/cc-computer-scripts (Branch: main)
 
 if not http then
     error("HTTP API is disabled on this server. Enable http_enable in computercraft-server.toml.")
+end
+
+-- Auto-cleanup any old leftover cache directory to free virtual disk space
+if fs.exists("music_cache") then
+    fs.delete("music_cache")
 end
 
 local monitor = peripheral.find("monitor")
@@ -439,6 +444,5 @@ local function main()
 end
 
 main()
-end
 
 main()
