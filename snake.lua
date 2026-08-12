@@ -13,7 +13,6 @@ end
 
 -- Monitor Initialization
 mon.setTextScale(0.5)
-mon.setTermScale(0.5)
 local w, h = mon.getSize()
 
 -- Game State Variables
