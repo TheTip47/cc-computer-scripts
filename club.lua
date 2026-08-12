@@ -1,5 +1,5 @@
 -- FULL FILE: club.lua
--- CC:HQ Speakers Interactive Single/Multi-Track Club Player with Touch UI & Caching
+-- CC:HQ Speakers Interactive Single/Multi-Track Club Player with Touch UI (RAM Direct Stream)
 -- Target Environment: ATM10 (Minecraft 1.21.1 / NeoForge)
 -- Repository Host: TheTip47/cc-computer-scripts (Branch: main)
 
@@ -18,8 +18,7 @@ local playlist = {
     {
         title = "Ty Dolla $ign - Or Nah (feat. The Weeknd, Wiz)",
         file = "Ty%20Dolla%20%24ign%20-%20Or%20Nah%20%28feat.%20The%20Weeknd%2C%20Wiz%29%20%20Lyrics.mp3",
-        rawFile = "Ty Dolla $ign - Or Nah (feat. The Weeknd, Wiz)  Lyrics.mp3",
-        localName = "ty_dolla_sign_or_nah.mp3"
+        rawFile = "Ty Dolla $ign - Or Nah (feat. The Weeknd, Wiz)  Lyrics.mp3"
     }
 }
 
@@ -276,20 +275,6 @@ local function handleTouchInput(x, y, isCompact)
 end
 
 local function fetchMp3Data(track)
-    local cacheDir = "music_cache"
-    local cachePath = cacheDir .. "/" .. track.localName
-
-    if fs.exists(cachePath) then
-        local file = fs.open(cachePath, "rb")
-        if file then
-            local cachedData = file.readAll()
-            file.close()
-            if cachedData and #cachedData > 0 then
-                return cachedData
-            end
-        end
-    end
-
     state.isFetching = true
     state.statusText = "BUFFERING..."
     state.scrollOffset = 1
@@ -318,15 +303,6 @@ local function fetchMp3Data(track)
         state.statusText = "EMPTY MP3 DATA"
         drawAllUI()
         return nil
-    end
-
-    if not fs.exists(cacheDir) then
-        fs.makeDir(cacheDir)
-    end
-    local file = fs.open(cachePath, "wb")
-    if file then
-        file.write(data)
-        file.close()
     end
 
     return data
@@ -460,6 +436,9 @@ local function main()
     end
     term.clear()
     term.setCursorPos(1, 1)
+end
+
+main()
 end
 
 main()
