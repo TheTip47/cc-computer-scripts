@@ -2,7 +2,11 @@
 -- CC: Tweaked - Central Telemetry Dashboard (dashboard.lua)
 -- Setup: Place on Advanced Computer with Wireless/Ender Modem.
 -- Optional: Connect an Advanced Monitor on any side.
+-- Usage: dashboard [targetProtocol]
 -- =========================================================
+
+local args = { ... }
+local targetProtocol = args[1] or "TURTLE_TELEMETRY"
 
 -- Explicitly find and open Wireless/Ender Modem (ignoring Wired Modems)
 local function openWirelessModem()
@@ -64,7 +68,7 @@ local function renderDashboard()
     -- Header
     display.setTextColor(colors.yellow)
     display.write("==================================================\n")
-    display.write("         HIGH TORQUE TELEMETRY DASHBOARD          \n")
+    display.write(string.format("        TELEMETRY DASHBOARD (%s)\n", targetProtocol:sub(1, 18)))
     display.write("==================================================\n")
     display.setTextColor(colors.white)
     
@@ -154,7 +158,7 @@ local timerId = os.startTimer(1)
 while true do
     local event, p1, p2, p3 = os.pullEvent()
     
-    if event == "rednet_message" and p3 == "TURTLE_TELEMETRY" then
+    if event == "rednet_message" and p3 == targetProtocol then
         if type(p2) == "table" and p2.id then
             p2.lastSeen = os.clock()
             activeTurtles[p2.id] = p2
