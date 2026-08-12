@@ -1,24 +1,32 @@
 -- FULL FILE: playlist.lua
--- CC:HQ Speakers Interactive MP3 Player with 1-Block Screen Touch UI
+-- CC:HQ Speakers Interactive MP3 Player with Multi-Speaker Broadcasting & 1-Block Screen Touch UI
 -- Target Environment: ATM10 (Minecraft 1.21.1 / NeoForge)
--- Repository Branch: TheTip47/cc-computer-scripts (music branch)
+-- Repository Host: TheTip47/cc-computer-scripts (Branch: main)
 
 if not http then
     error("HTTP API is disabled on this server. Enable http_enable in computercraft-server.toml.")
 end
 
-local speaker = peripheral.find("speaker")
-if not speaker then
-    error("No CC:HQ Speaker peripheral found. Connect a speaker to this computer.")
+local speakers = { peripheral.find("speaker") }
+if #speakers == 0 then
+    error("No CC:HQ Speaker peripherals found on local sides or wired network.")
 end
 
-if type(speaker.speakMp3) ~= "function" then
-    error("Connected speaker does not support MP3 playback. Ensure CCHQ Speakers mod is installed.")
+local validSpeakerFound = false
+for _, spk in ipairs(speakers) do
+    if type(spk.speakMp3) == "function" then
+        validSpeakerFound = true
+        break
+    end
+end
+
+if not validSpeakerFound then
+    error("Connected speaker(s) do not support MP3 playback. Ensure CCHQ Speakers mod is installed.")
 end
 
 local monitor = peripheral.find("monitor")
 
-local BASE_URL = "https://raw.githubusercontent.com/TheTip47/cc-computer-scripts/music/"
+local BASE_URL = "https://raw.githubusercontent.com/TheTip47/cc-computer-scripts/main/"
 
 local playlist = {
     {
@@ -43,9 +51,42 @@ local state = {
     currentData = nil,
     currentTrackTitle = "",
     statusText = "STOPPED",
-    actionRequested = nil, -- "next", "prev", "toggle_pause"
+    actionRequested = nil,
     running = true
 }
+
+local function broadcastMp3(audioBytes)
+    local activeSpeakers = { peripheral.find("speaker") }
+    local playedAny = false
+    for _, spk in ipairs(activeSpeakers) do
+        if type(spk.speakMp3) == "function" then
+            local ok = pcall(function()
+                spk.speakMp3(audioBytes, 1.0)
+            end)
+            if ok then playedAny = true end
+        end
+    end
+    return playedAny
+end
+
+local function stopAllSpeakers()
+    local activeSpeakers = { peripheral.find("speaker") }
+    for _, spk in ipairs(activeSpeakers) do
+        if type(spk.stop) == "function" then
+            pcall(function() spk.stop() end)
+        end
+    end
+end
+
+local function isAnySpeakerPlaying()
+    local activeSpeakers = { peripheral.find("speaker") }
+    for _, spk in ipairs(activeSpeakers) do
+        if type(spk.speakIsPlaying) == "function" and spk.speakIsPlaying() then
+            return true
+        end
+    end
+    return false
+end
 
 local function centerText(text, width)
     if #text >= width then
@@ -53,29 +94,6 @@ local function centerText(text, width)
     end
     local pad = math.floor((width - #text) / 2)
     return string.rep(" ", pad) .. text .. string.rep(" ", width - #text - pad)
-end
-
--- Automatically finds the first speaker available on local sides or the wired network
-local speaker = peripheral.find("speaker")
-
-if not speaker then
-    error("No speaker found on local sides or wired network.")
-end
-
--- Direct network address targeting
-local speaker1 = peripheral.wrap("speaker_0")
-local speaker2 = peripheral.wrap("speaker_1")
-local speaker2 = peripheral.wrap("speaker_3")
-local speaker2 = peripheral.wrap("speaker_4")
-local speaker2 = peripheral.wrap("speaker_5")
-local speaker2 = peripheral.wrap("speaker_6")
-
--- Play identical audio to all connected network speakers simultaneously
-local allSpeakers = { peripheral.find("speaker") }
-for _, spk in ipairs(allSpeakers) do
-    if type(spk.speakMp3) == "function" then
-        spk.speakMp3(audioData, 1.0)
-    end
 end
 
 local function drawUIOnDevice(device)
@@ -86,13 +104,11 @@ local function drawUIOnDevice(device)
     device.clear()
 
     if w <= 16 then
-        -- Compact UI layout optimized for 1-Block Screen (scale 0.5 ~ 14x10 grid)
         device.setCursorPos(1, 1)
         device.setBackgroundColor(colors.blue)
         device.setTextColor(colors.white)
         device.write(centerText("HQ PLAYER", w))
 
-        -- Status Indicator
         device.setCursorPos(1, 2)
         device.setBackgroundColor(colors.gray)
         device.setTextColor(colors.yellow)
@@ -100,7 +116,6 @@ local function drawUIOnDevice(device)
         if #stat > w then stat = string.sub(stat, 1, w) end
         device.write(centerText(stat, w))
 
-        -- Track Title Display
         device.setCursorPos(1, 3)
         device.setBackgroundColor(colors.black)
         device.setTextColor(colors.cyan)
@@ -110,13 +125,8 @@ local function drawUIOnDevice(device)
         end
         device.write(centerText(rawTitle, w))
 
-        -- Touch Controls (Rows 5 to 6)
-        -- Button 1: PREV [<<] (Cols 1-4)
-        -- Button 2: PLAY/PAUSE [>||] (Cols 6-9)
-        -- Button 3: NEXT [>>] (Cols 11-14)
         local btnY1, btnY2 = 5, 6
 
-        -- PREV Button
         device.setBackgroundColor(colors.red)
         device.setTextColor(colors.white)
         device.setCursorPos(1, btnY1)
@@ -124,7 +134,6 @@ local function drawUIOnDevice(device)
         device.setCursorPos(1, btnY2)
         device.write(" PREV")
 
-        -- PLAY / PAUSE Button
         if state.isPaused or not state.isPlaying then
             device.setBackgroundColor(colors.green)
             device.setTextColor(colors.black)
@@ -141,7 +150,6 @@ local function drawUIOnDevice(device)
             device.write("PAUS")
         end
 
-        -- NEXT Button
         device.setBackgroundColor(colors.lime)
         device.setTextColor(colors.black)
         device.setCursorPos(11, btnY1)
@@ -149,7 +157,6 @@ local function drawUIOnDevice(device)
         device.setCursorPos(11, btnY2)
         device.write(" NEXT")
 
-        -- Track Counter Footer
         device.setCursorPos(1, 8)
         device.setBackgroundColor(colors.black)
         device.setTextColor(colors.lightGray)
@@ -159,7 +166,6 @@ local function drawUIOnDevice(device)
         device.setTextColor(colors.gray)
         device.write(centerText("ATM10 MP3", w))
     else
-        -- Standard Terminal Display Layout
         device.setCursorPos(1, 1)
         device.setBackgroundColor(colors.blue)
         device.setTextColor(colors.white)
@@ -182,7 +188,6 @@ local function drawUIOnDevice(device)
         device.setTextColor(colors.lightGray)
         device.write("Controls (Click Monitor or Press Key):")
 
-        -- Interactive Buttons on Terminal
         device.setCursorPos(2, 10)
         device.setBackgroundColor(colors.red)
         device.setTextColor(colors.white)
@@ -220,7 +225,6 @@ end
 
 local function handleTouchInput(x, y, isCompact)
     if isCompact then
-        -- 1-Block Screen touch bounds (scale 0.5)
         if y >= 5 and y <= 6 then
             if x >= 1 and x <= 4 then
                 state.actionRequested = "prev"
@@ -231,7 +235,6 @@ local function handleTouchInput(x, y, isCompact)
             end
         end
     else
-        -- Terminal touch bounds
         if y == 10 then
             if x >= 2 and x <= 15 then
                 state.actionRequested = "prev"
@@ -322,35 +325,31 @@ local function audioPlaybackLoop()
             state.statusText = "PLAYING"
             drawAllUI()
 
-            local pcallSuccess, err = pcall(function()
-                speaker.speakMp3(state.currentData, 1.0)
-            end)
+            local pcallSuccess = broadcastMp3(state.currentData)
 
             if not pcallSuccess then
                 state.statusText = "SPEAK ERR"
                 drawAllUI()
                 os.sleep(2)
             else
-                -- Playback monitor loop
                 while state.running do
                     os.sleep(0.2)
 
-                    -- Check user action triggers
                     if state.actionRequested == "toggle_pause" then
                         state.actionRequested = nil
                         if state.isPaused then
                             state.isPaused = false
                             state.statusText = "PLAYING"
-                            speaker.speakMp3(state.currentData, 1.0)
+                            broadcastMp3(state.currentData)
                         else
                             state.isPaused = true
                             state.statusText = "PAUSED"
-                            speaker.stop()
+                            stopAllSpeakers()
                         end
                         drawAllUI()
                     elseif state.actionRequested == "next" then
                         state.actionRequested = nil
-                        speaker.stop()
+                        stopAllSpeakers()
                         state.currentIndex = state.currentIndex + 1
                         if state.currentIndex > #playlist then
                             state.currentIndex = 1
@@ -358,7 +357,7 @@ local function audioPlaybackLoop()
                         break
                     elseif state.actionRequested == "prev" then
                         state.actionRequested = nil
-                        speaker.stop()
+                        stopAllSpeakers()
                         state.currentIndex = state.currentIndex - 1
                         if state.currentIndex < 1 then
                             state.currentIndex = #playlist
@@ -366,8 +365,7 @@ local function audioPlaybackLoop()
                         break
                     end
 
-                    -- Check natural end of track playback
-                    if not state.isPaused and not speaker.speakIsPlaying() then
+                    if not state.isPaused and not isAnySpeakerPlaying() then
                         state.currentIndex = state.currentIndex + 1
                         if state.currentIndex > #playlist then
                             state.currentIndex = 1
@@ -377,7 +375,6 @@ local function audioPlaybackLoop()
                 end
             end
         else
-            -- Download failed: skip to next after short delay
             os.sleep(3)
             state.currentIndex = state.currentIndex + 1
             if state.currentIndex > #playlist then
@@ -389,7 +386,7 @@ end
 
 local function main()
     parallel.waitForAny(uiControlLoop, audioPlaybackLoop)
-    speaker.stop()
+    stopAllSpeakers()
     if monitor then
         monitor.clear()
     end
