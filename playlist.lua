@@ -17,15 +17,27 @@ local BASE_URL = "https://raw.githubusercontent.com/TheTip47/cc-computer-scripts
 local playlist = {
     {
         title = "$UICIDEBOY$ - MSY",
-        file = "%24UICIDEBOY%24%20-%20MSY%20%28Lyric%20Video%29.mp3"
+        file = "%24UICIDEBOY%24%20-%20MSY%20%28Lyric%20Video%29.mp3",
+        rawFile = "$UICIDEBOY$ - MSY (Lyric Video).mp3",
+        localName = "suicideboys_msy.mp3"
     },
     {
         title = "Larry June - Black Man",
-        file = "Larry%20June%20%26%20Cardo%20Got%20Wings%20-%20Black%20Man%20%28Official%20Video%29.mp3"
+        file = "Larry%20June%20%26%20Cardo%20Got%20Wings%20-%20Black%20Man%20%28Official%20Video%29.mp3",
+        rawFile = "Larry June & Cardo Got Wings - Black Man (Official Video).mp3",
+        localName = "larry_june_black_man.mp3"
+    },
+    {
+        title = "Oblivion - Day & Night",
+        file = "Oblivion%20-%20Music%20%26%20Ambience%20-%20Day%20%26%20Night%20%281%29.mp3",
+        rawFile = "Oblivion - Music & Ambience - Day & Night (1).mp3",
+        localName = "oblivion_day_night.mp3"
     },
     {
         title = "Papa Roach - HELP",
-        file = "Papa%20Roach%20-%20HELP%20%28Official%20Audio%29.mp3"
+        file = "Papa%20Roach%20-%20HELP%20%28Official%20Audio%29.mp3",
+        rawFile = "Papa Roach - HELP (Official Audio).mp3",
+        localName = "papa_roach_help.mp3"
     }
 }
 
@@ -63,57 +75,32 @@ local function broadcastMp3(audioBytes)
         return false
     end
 
-    if #activeSpeakers == 1 then
-        local ok = pcall(function() activeSpeakers[1].speakMp3(audioBytes, 1.0) end)
-        return ok
-    end
-
-    -- Synchronized parallel execution to eliminate audio latency drift across wired network
-    local calls = {}
+    -- Direct, synchronous single-tick Lua execution loop
+    -- Eliminates coroutine yield delays between speaker audio triggers
     local playedAny = false
-    for _, spk in ipairs(activeSpeakers) do
-        local currentSpeaker = spk
-        table.insert(calls, function()
-            local ok = pcall(function()
-                currentSpeaker.speakMp3(audioBytes, 1.0)
-            end)
-            if ok then playedAny = true end
-        end)
+    for i = 1, #activeSpeakers do
+        local ok = pcall(activeSpeakers[i].speakMp3, audioBytes, 1.0)
+        if ok then
+            playedAny = true
+        end
     end
-
-    parallel.waitForAll(table.unpack(calls))
     return playedAny
 end
 
 local function stopAllSpeakers()
     local activeSpeakers = getConnectedSpeakers()
-    if #activeSpeakers == 0 then return end
-
-    if #activeSpeakers == 1 then
-        if type(activeSpeakers[1].stop) == "function" then
-            pcall(function() activeSpeakers[1].stop() end)
+    for i = 1, #activeSpeakers do
+        if type(activeSpeakers[i].stop) == "function" then
+            pcall(activeSpeakers[i].stop)
         end
-        return
     end
-
-    local calls = {}
-    for _, spk in ipairs(activeSpeakers) do
-        local currentSpeaker = spk
-        table.insert(calls, function()
-            if type(currentSpeaker.stop) == "function" then
-                pcall(function() currentSpeaker.stop() end)
-            end
-        end)
-    end
-
-    parallel.waitForAll(table.unpack(calls))
 end
 
 local function isAnySpeakerPlaying()
     local activeSpeakers = getConnectedSpeakers()
-    for _, spk in ipairs(activeSpeakers) do
-        if type(spk.speakIsPlaying) == "function" then
-            local ok, playing = pcall(function() return spk.speakIsPlaying() end)
+    for i = 1, #activeSpeakers do
+        if type(activeSpeakers[i].speakIsPlaying) == "function" then
+            local ok, playing = pcall(activeSpeakers[i].speakIsPlaying)
             if ok and playing then
                 return true
             end
@@ -285,38 +272,59 @@ end
 
 local function handleTouchInput(x, y, isCompact)
     if isCompact then
-        -- 1-Block Screen touch bounds (Rows 5 to 7, Scale 0.5)
-        if y >= 5 and y <= 7 then
-            if x >= 1 and x <= 4 then
+        -- 1-Block Screen touch bounds (Expanded regions for reliable touch targeting)
+        if y >= 4 and y <= 8 then
+            if x >= 1 and x <= 5 then
                 state.actionRequested = "prev"
-            elseif x >= 6 and x <= 9 then
+            elseif x >= 6 and x <= 10 then
                 state.actionRequested = "toggle_pause"
             elseif x >= 11 and x <= 14 then
                 state.actionRequested = "next"
             end
         end
     else
-        -- Terminal touch bounds
-        if y == 10 then
-            if x >= 2 and x <= 15 then
+        -- Terminal touch bounds (Expanded vertical and horizontal targets)
+        if y >= 9 and y <= 11 then
+            if x >= 1 and x <= 16 then
                 state.actionRequested = "prev"
-            elseif x >= 18 and x <= 35 then
+            elseif x >= 17 and x <= 36 then
                 state.actionRequested = "toggle_pause"
-            elseif x >= 38 and x <= 50 then
+            elseif x >= 37 and x <= 51 then
                 state.actionRequested = "next"
             end
         end
     end
 end
 
-local function fetchMp3Data(encodedFilename)
-    local fullUrl = BASE_URL .. encodedFilename
+local function fetchMp3Data(track)
+    -- Local Disk Caching Strategy: Checks local disk storage before performing HTTP downloads
+    local cacheDir = "music_cache"
+    local cachePath = cacheDir .. "/" .. track.localName
+
+    if fs.exists(cachePath) then
+        local file = fs.open(cachePath, "rb")
+        if file then
+            local cachedData = file.readAll()
+            file.close()
+            if cachedData and #cachedData > 0 then
+                return cachedData
+            end
+        end
+    end
+
     state.isFetching = true
     state.statusText = "BUFFERING..."
     state.scrollOffset = 1
     drawAllUI()
 
+    local fullUrl = BASE_URL .. track.file
     local response, err = http.get(fullUrl, nil, true)
+    
+    if not response and track.rawFile then
+        local fallbackUrl = BASE_URL .. track.rawFile
+        response, err = http.get(fallbackUrl, nil, true)
+    end
+
     if not response then
         state.isFetching = false
         state.statusText = "DOWNLOAD ERR"
@@ -332,6 +340,16 @@ local function fetchMp3Data(encodedFilename)
         state.statusText = "EMPTY MP3 DATA"
         drawAllUI()
         return nil
+    end
+
+    -- Save downloaded binary payload to local disk cache
+    if not fs.exists(cacheDir) then
+        fs.makeDir(cacheDir)
+    end
+    local file = fs.open(cachePath, "wb")
+    if file then
+        file.write(data)
+        file.close()
     end
 
     return data
@@ -389,7 +407,7 @@ local function audioPlaybackLoop()
         else
             local track = playlist[state.currentIndex]
             state.currentTrackTitle = track.title
-            state.currentData = fetchMp3Data(track.file)
+            state.currentData = fetchMp3Data(track)
 
             if state.currentData then
                 state.isPlaying = true
@@ -447,7 +465,7 @@ local function audioPlaybackLoop()
                     end
                 end
             else
-                os.sleep(3)
+                os.sleep(2)
                 state.currentIndex = state.currentIndex + 1
                 if state.currentIndex > #playlist then
                     state.currentIndex = 1
