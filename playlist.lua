@@ -1,5 +1,5 @@
 -- FULL FILE: playlist.lua
--- CC:HQ Speakers Interactive MP3 Player with Multi-Speaker Broadcasting & Touch UI
+-- CC:HQ Speakers Interactive MP3 Player with Synchronized Multi-Speaker & Touch UI
 -- Target Environment: ATM10 (Minecraft 1.21.1 / NeoForge)
 -- Repository Host: TheTip47/cc-computer-scripts (Branch: main)
 
@@ -8,6 +8,9 @@ if not http then
 end
 
 local monitor = peripheral.find("monitor")
+if monitor then
+    monitor.setTextScale(0.5)
+end
 
 local BASE_URL = "https://raw.githubusercontent.com/TheTip47/cc-computer-scripts/main/"
 
@@ -35,6 +38,7 @@ local state = {
     currentTrackTitle = "",
     statusText = "STOPPED",
     actionRequested = nil, -- "next", "prev", "toggle_pause"
+    scrollOffset = 1,
     running = true
 }
 
@@ -59,25 +63,50 @@ local function broadcastMp3(audioBytes)
         return false
     end
 
+    if #activeSpeakers == 1 then
+        local ok = pcall(function() activeSpeakers[1].speakMp3(audioBytes, 1.0) end)
+        return ok
+    end
+
+    -- Synchronized parallel execution to eliminate audio latency drift across wired network
+    local calls = {}
     local playedAny = false
     for _, spk in ipairs(activeSpeakers) do
-        local ok = pcall(function()
-            spk.speakMp3(audioBytes, 1.0)
+        local currentSpeaker = spk
+        table.insert(calls, function()
+            local ok = pcall(function()
+                currentSpeaker.speakMp3(audioBytes, 1.0)
+            end)
+            if ok then playedAny = true end
         end)
-        if ok then
-            playedAny = true
-        end
     end
+
+    parallel.waitForAll(table.unpack(calls))
     return playedAny
 end
 
 local function stopAllSpeakers()
     local activeSpeakers = getConnectedSpeakers()
-    for _, spk in ipairs(activeSpeakers) do
-        if type(spk.stop) == "function" then
-            pcall(function() spk.stop() end)
+    if #activeSpeakers == 0 then return end
+
+    if #activeSpeakers == 1 then
+        if type(activeSpeakers[1].stop) == "function" then
+            pcall(function() activeSpeakers[1].stop() end)
         end
+        return
     end
+
+    local calls = {}
+    for _, spk in ipairs(activeSpeakers) do
+        local currentSpeaker = spk
+        table.insert(calls, function()
+            if type(currentSpeaker.stop) == "function" then
+                pcall(function() currentSpeaker.stop() end)
+            end
+        end)
+    end
+
+    parallel.waitForAll(table.unpack(calls))
 end
 
 local function isAnySpeakerPlaying()
@@ -101,6 +130,17 @@ local function centerText(text, width)
     return string.rep(" ", pad) .. text .. string.rep(" ", width - #text - pad)
 end
 
+local function getFormattedTitle(fullTitle, width)
+    if #fullTitle <= width then
+        return centerText(fullTitle, width)
+    end
+    local padded = fullTitle .. "   ---   "
+    local loopLen = #padded
+    local startPos = ((state.scrollOffset - 1) % loopLen) + 1
+    local extended = padded .. padded
+    return string.sub(extended, startPos, startPos + width - 1)
+end
+
 local function drawUIOnDevice(device)
     if not device then return end
 
@@ -109,7 +149,7 @@ local function drawUIOnDevice(device)
     device.clear()
 
     if w <= 16 then
-        -- Compact UI layout optimized for 1-Block Screen (scale 0.5 ~ 14x10 grid)
+        -- Compact UI layout optimized for 1-Block Screen (scale 0.5 = 14x10 grid)
         device.setCursorPos(1, 1)
         device.setBackgroundColor(colors.blue)
         device.setTextColor(colors.white)
@@ -123,18 +163,15 @@ local function drawUIOnDevice(device)
         if #stat > w then stat = string.sub(stat, 1, w) end
         device.write(centerText(stat, w))
 
-        -- Track Title Display
+        -- Track Title Display (Scrolling Marquee)
         device.setCursorPos(1, 3)
         device.setBackgroundColor(colors.black)
         device.setTextColor(colors.cyan)
         local rawTitle = playlist[state.currentIndex].title
-        if #rawTitle > w then
-            rawTitle = string.sub(rawTitle, 1, w)
-        end
-        device.write(centerText(rawTitle, w))
+        device.write(getFormattedTitle(rawTitle, w))
 
-        -- Touch Controls (Rows 5 to 6)
-        local btnY1, btnY2 = 5, 6
+        -- Touch Controls (Rows 5 to 7 - Expanded 3-row touch bounds)
+        local btnY1, btnY2, btnY3 = 5, 6, 7
 
         -- PREV Button (Cols 1-4)
         device.setBackgroundColor(colors.red)
@@ -142,7 +179,9 @@ local function drawUIOnDevice(device)
         device.setCursorPos(1, btnY1)
         device.write(" << ")
         device.setCursorPos(1, btnY2)
-        device.write(" PREV")
+        device.write("PREV")
+        device.setCursorPos(1, btnY3)
+        device.write(" << ")
 
         -- PLAY / PAUSE Button (Cols 6-9)
         if state.isPaused or not state.isPlaying then
@@ -152,6 +191,8 @@ local function drawUIOnDevice(device)
             device.write(" >  ")
             device.setCursorPos(6, btnY2)
             device.write("PLAY")
+            device.setCursorPos(6, btnY3)
+            device.write(" >  ")
         else
             device.setBackgroundColor(colors.orange)
             device.setTextColor(colors.black)
@@ -159,6 +200,8 @@ local function drawUIOnDevice(device)
             device.write(" || ")
             device.setCursorPos(6, btnY2)
             device.write("PAUS")
+            device.setCursorPos(6, btnY3)
+            device.write(" || ")
         end
 
         -- NEXT Button (Cols 11-14)
@@ -167,15 +210,17 @@ local function drawUIOnDevice(device)
         device.setCursorPos(11, btnY1)
         device.write(" >> ")
         device.setCursorPos(11, btnY2)
-        device.write(" NEXT")
+        device.write("NEXT")
+        device.setCursorPos(11, btnY3)
+        device.write(" >> ")
 
         -- Track Counter Footer
-        device.setCursorPos(1, 8)
+        device.setCursorPos(1, 9)
         device.setBackgroundColor(colors.black)
         device.setTextColor(colors.lightGray)
-        device.write(centerText("TRK: " .. state.currentIndex .. "/" .. #playlist, w))
+        device.write(centerText("TRK " .. state.currentIndex .. " OF " .. #playlist, w))
 
-        device.setCursorPos(1, 9)
+        device.setCursorPos(1, 10)
         device.setTextColor(colors.gray)
         device.write(centerText("ATM10 MP3", w))
     else
@@ -240,8 +285,8 @@ end
 
 local function handleTouchInput(x, y, isCompact)
     if isCompact then
-        -- 1-Block Screen touch bounds (scale 0.5)
-        if y >= 5 and y <= 6 then
+        -- 1-Block Screen touch bounds (Rows 5 to 7, Scale 0.5)
+        if y >= 5 and y <= 7 then
             if x >= 1 and x <= 4 then
                 state.actionRequested = "prev"
             elseif x >= 6 and x <= 9 then
@@ -268,6 +313,7 @@ local function fetchMp3Data(encodedFilename)
     local fullUrl = BASE_URL .. encodedFilename
     state.isFetching = true
     state.statusText = "BUFFERING..."
+    state.scrollOffset = 1
     drawAllUI()
 
     local response, err = http.get(fullUrl, nil, true)
@@ -297,7 +343,7 @@ local function uiControlLoop()
     end
     drawAllUI()
 
-    local timerID = os.startTimer(0.5)
+    local timerID = os.startTimer(0.3)
 
     while state.running do
         local eventData = { os.pullEvent() }
@@ -324,8 +370,11 @@ local function uiControlLoop()
             end
             drawAllUI()
         elseif eventType == "timer" and eventData[2] == timerID then
+            if state.isPlaying and not state.isPaused then
+                state.scrollOffset = state.scrollOffset + 1
+            end
             drawAllUI()
-            timerID = os.startTimer(0.5)
+            timerID = os.startTimer(0.3)
         end
     end
 end
