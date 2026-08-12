@@ -59,6 +59,29 @@ local function centerText(text, width)
     return string.rep(" ", pad) .. text .. string.rep(" ", width - #text - pad)
 end
 
+-- Automatically finds the first speaker available on local sides or the wired network
+local speaker = peripheral.find("speaker")
+
+if not speaker then
+    error("No speaker found on local sides or wired network.")
+end
+
+-- Direct network address targeting
+local speaker1 = peripheral.wrap("speaker_0")
+local speaker2 = peripheral.wrap("speaker_1")
+local speaker2 = peripheral.wrap("speaker_3")
+local speaker2 = peripheral.wrap("speaker_4")
+local speaker2 = peripheral.wrap("speaker_5")
+local speaker2 = peripheral.wrap("speaker_6")
+
+-- Play identical audio to all connected network speakers simultaneously
+local allSpeakers = { peripheral.find("speaker") }
+for _, spk in ipairs(allSpeakers) do
+    if type(spk.speakMp3) == "function" then
+        spk.speakMp3(audioData, 1.0)
+    end
+end
+
 local function drawUIOnDevice(device)
     if not device then return end
 
