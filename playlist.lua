@@ -30,10 +30,6 @@ local playlist = {
         file = "Larry%20June%20%26%20Cardo%20Got%20Wings%20-%20Black%20Man%20%28Official%20Video%29.mp3"
     },
     {
-        title = "Oblivion - Day & Night",
-        file = "Oblivion%20-%20Music%20%26%20Ambience%20-%20Day%20%26%20Night%20%281%29.mp3"
-    },
-    {
         title = "Papa Roach - HELP",
         file = "Papa%20Roach%20-%20HELP%20%28Official%20Audio%29.mp3"
     }
