@@ -1,27 +1,10 @@
 -- FULL FILE: playlist.lua
--- CC:HQ Speakers Interactive MP3 Player with Multi-Speaker Broadcasting & 1-Block Screen Touch UI
+-- CC:HQ Speakers Interactive MP3 Player with Multi-Speaker Broadcasting & Touch UI
 -- Target Environment: ATM10 (Minecraft 1.21.1 / NeoForge)
 -- Repository Host: TheTip47/cc-computer-scripts (Branch: main)
 
 if not http then
     error("HTTP API is disabled on this server. Enable http_enable in computercraft-server.toml.")
-end
-
-local speakers = { peripheral.find("speaker") }
-if #speakers == 0 then
-    error("No CC:HQ Speaker peripherals found on local sides or wired network.")
-end
-
-local validSpeakerFound = false
-for _, spk in ipairs(speakers) do
-    if type(spk.speakMp3) == "function" then
-        validSpeakerFound = true
-        break
-    end
-end
-
-if not validSpeakerFound then
-    error("Connected speaker(s) do not support MP3 playback. Ensure CCHQ Speakers mod is installed.")
 end
 
 local monitor = peripheral.find("monitor")
@@ -51,26 +34,45 @@ local state = {
     currentData = nil,
     currentTrackTitle = "",
     statusText = "STOPPED",
-    actionRequested = nil,
+    actionRequested = nil, -- "next", "prev", "toggle_pause"
     running = true
 }
 
+local function getConnectedSpeakers()
+    local found = { peripheral.find("speaker") }
+    local valid = {}
+    for _, spk in ipairs(found) do
+        if type(spk.speakMp3) == "function" then
+            table.insert(valid, spk)
+        end
+    end
+    return valid
+end
+
 local function broadcastMp3(audioBytes)
-    local activeSpeakers = { peripheral.find("speaker") }
+    if not audioBytes or type(audioBytes) ~= "string" or #audioBytes == 0 then
+        return false
+    end
+
+    local activeSpeakers = getConnectedSpeakers()
+    if #activeSpeakers == 0 then
+        return false
+    end
+
     local playedAny = false
     for _, spk in ipairs(activeSpeakers) do
-        if type(spk.speakMp3) == "function" then
-            local ok = pcall(function()
-                spk.speakMp3(audioBytes, 1.0)
-            end)
-            if ok then playedAny = true end
+        local ok = pcall(function()
+            spk.speakMp3(audioBytes, 1.0)
+        end)
+        if ok then
+            playedAny = true
         end
     end
     return playedAny
 end
 
 local function stopAllSpeakers()
-    local activeSpeakers = { peripheral.find("speaker") }
+    local activeSpeakers = getConnectedSpeakers()
     for _, spk in ipairs(activeSpeakers) do
         if type(spk.stop) == "function" then
             pcall(function() spk.stop() end)
@@ -79,10 +81,13 @@ local function stopAllSpeakers()
 end
 
 local function isAnySpeakerPlaying()
-    local activeSpeakers = { peripheral.find("speaker") }
+    local activeSpeakers = getConnectedSpeakers()
     for _, spk in ipairs(activeSpeakers) do
-        if type(spk.speakIsPlaying) == "function" and spk.speakIsPlaying() then
-            return true
+        if type(spk.speakIsPlaying) == "function" then
+            local ok, playing = pcall(function() return spk.speakIsPlaying() end)
+            if ok and playing then
+                return true
+            end
         end
     end
     return false
@@ -104,11 +109,13 @@ local function drawUIOnDevice(device)
     device.clear()
 
     if w <= 16 then
+        -- Compact UI layout optimized for 1-Block Screen (scale 0.5 ~ 14x10 grid)
         device.setCursorPos(1, 1)
         device.setBackgroundColor(colors.blue)
         device.setTextColor(colors.white)
         device.write(centerText("HQ PLAYER", w))
 
+        -- Status Indicator
         device.setCursorPos(1, 2)
         device.setBackgroundColor(colors.gray)
         device.setTextColor(colors.yellow)
@@ -116,6 +123,7 @@ local function drawUIOnDevice(device)
         if #stat > w then stat = string.sub(stat, 1, w) end
         device.write(centerText(stat, w))
 
+        -- Track Title Display
         device.setCursorPos(1, 3)
         device.setBackgroundColor(colors.black)
         device.setTextColor(colors.cyan)
@@ -125,8 +133,10 @@ local function drawUIOnDevice(device)
         end
         device.write(centerText(rawTitle, w))
 
+        -- Touch Controls (Rows 5 to 6)
         local btnY1, btnY2 = 5, 6
 
+        -- PREV Button (Cols 1-4)
         device.setBackgroundColor(colors.red)
         device.setTextColor(colors.white)
         device.setCursorPos(1, btnY1)
@@ -134,6 +144,7 @@ local function drawUIOnDevice(device)
         device.setCursorPos(1, btnY2)
         device.write(" PREV")
 
+        -- PLAY / PAUSE Button (Cols 6-9)
         if state.isPaused or not state.isPlaying then
             device.setBackgroundColor(colors.green)
             device.setTextColor(colors.black)
@@ -150,6 +161,7 @@ local function drawUIOnDevice(device)
             device.write("PAUS")
         end
 
+        -- NEXT Button (Cols 11-14)
         device.setBackgroundColor(colors.lime)
         device.setTextColor(colors.black)
         device.setCursorPos(11, btnY1)
@@ -157,6 +169,7 @@ local function drawUIOnDevice(device)
         device.setCursorPos(11, btnY2)
         device.write(" NEXT")
 
+        -- Track Counter Footer
         device.setCursorPos(1, 8)
         device.setBackgroundColor(colors.black)
         device.setTextColor(colors.lightGray)
@@ -166,6 +179,7 @@ local function drawUIOnDevice(device)
         device.setTextColor(colors.gray)
         device.write(centerText("ATM10 MP3", w))
     else
+        -- Standard Terminal Display Layout
         device.setCursorPos(1, 1)
         device.setBackgroundColor(colors.blue)
         device.setTextColor(colors.white)
@@ -188,6 +202,7 @@ local function drawUIOnDevice(device)
         device.setTextColor(colors.lightGray)
         device.write("Controls (Click Monitor or Press Key):")
 
+        -- Interactive Buttons on Terminal
         device.setCursorPos(2, 10)
         device.setBackgroundColor(colors.red)
         device.setTextColor(colors.white)
@@ -225,6 +240,7 @@ end
 
 local function handleTouchInput(x, y, isCompact)
     if isCompact then
+        -- 1-Block Screen touch bounds (scale 0.5)
         if y >= 5 and y <= 6 then
             if x >= 1 and x <= 4 then
                 state.actionRequested = "prev"
@@ -235,6 +251,7 @@ local function handleTouchInput(x, y, isCompact)
             end
         end
     else
+        -- Terminal touch bounds
         if y == 10 then
             if x >= 2 and x <= 15 then
                 state.actionRequested = "prev"
@@ -315,70 +332,77 @@ end
 
 local function audioPlaybackLoop()
     while state.running do
-        local track = playlist[state.currentIndex]
-        state.currentTrackTitle = track.title
-        state.currentData = fetchMp3Data(track.file)
-
-        if state.currentData then
-            state.isPlaying = true
-            state.isPaused = false
-            state.statusText = "PLAYING"
+        local activeSpeakers = getConnectedSpeakers()
+        if #activeSpeakers == 0 then
+            state.statusText = "NO SPEAKER"
             drawAllUI()
+            os.sleep(2)
+        else
+            local track = playlist[state.currentIndex]
+            state.currentTrackTitle = track.title
+            state.currentData = fetchMp3Data(track.file)
 
-            local pcallSuccess = broadcastMp3(state.currentData)
-
-            if not pcallSuccess then
-                state.statusText = "SPEAK ERR"
+            if state.currentData then
+                state.isPlaying = true
+                state.isPaused = false
+                state.statusText = "PLAYING"
                 drawAllUI()
-                os.sleep(2)
-            else
-                while state.running do
-                    os.sleep(0.2)
 
-                    if state.actionRequested == "toggle_pause" then
-                        state.actionRequested = nil
-                        if state.isPaused then
-                            state.isPaused = false
-                            state.statusText = "PLAYING"
-                            broadcastMp3(state.currentData)
-                        else
-                            state.isPaused = true
-                            state.statusText = "PAUSED"
+                local played = broadcastMp3(state.currentData)
+
+                if not played then
+                    state.statusText = "SPEAK ERR"
+                    drawAllUI()
+                    os.sleep(2)
+                else
+                    while state.running do
+                        os.sleep(0.1)
+
+                        if state.actionRequested == "toggle_pause" then
+                            state.actionRequested = nil
+                            if state.isPaused then
+                                state.isPaused = false
+                                state.statusText = "PLAYING"
+                                broadcastMp3(state.currentData)
+                            else
+                                state.isPaused = true
+                                state.statusText = "PAUSED"
+                                stopAllSpeakers()
+                            end
+                            drawAllUI()
+                        elseif state.actionRequested == "next" then
+                            state.actionRequested = nil
                             stopAllSpeakers()
+                            state.currentIndex = state.currentIndex + 1
+                            if state.currentIndex > #playlist then
+                                state.currentIndex = 1
+                            end
+                            break
+                        elseif state.actionRequested == "prev" then
+                            state.actionRequested = nil
+                            stopAllSpeakers()
+                            state.currentIndex = state.currentIndex - 1
+                            if state.currentIndex < 1 then
+                                state.currentIndex = #playlist
+                            end
+                            break
                         end
-                        drawAllUI()
-                    elseif state.actionRequested == "next" then
-                        state.actionRequested = nil
-                        stopAllSpeakers()
-                        state.currentIndex = state.currentIndex + 1
-                        if state.currentIndex > #playlist then
-                            state.currentIndex = 1
-                        end
-                        break
-                    elseif state.actionRequested == "prev" then
-                        state.actionRequested = nil
-                        stopAllSpeakers()
-                        state.currentIndex = state.currentIndex - 1
-                        if state.currentIndex < 1 then
-                            state.currentIndex = #playlist
-                        end
-                        break
-                    end
 
-                    if not state.isPaused and not isAnySpeakerPlaying() then
-                        state.currentIndex = state.currentIndex + 1
-                        if state.currentIndex > #playlist then
-                            state.currentIndex = 1
+                        if not state.isPaused and not isAnySpeakerPlaying() then
+                            state.currentIndex = state.currentIndex + 1
+                            if state.currentIndex > #playlist then
+                                state.currentIndex = 1
+                            end
+                            break
                         end
-                        break
                     end
                 end
-            end
-        else
-            os.sleep(3)
-            state.currentIndex = state.currentIndex + 1
-            if state.currentIndex > #playlist then
-                state.currentIndex = 1
+            else
+                os.sleep(3)
+                state.currentIndex = state.currentIndex + 1
+                if state.currentIndex > #playlist then
+                    state.currentIndex = 1
+                end
             end
         end
     end
