@@ -1,15 +1,22 @@
+-- FULL FILE: update.lua
 -- Repository Auto-Updater Manifest for cc-computer-scripts
 -- Host: TheTip47/cc-computer-scripts
 
-local baseUrl = "https://raw.githubusercontent.com/TheTip47/cc-computer-scripts/main/"
+if not http then
+    error("HTTP API is disabled on this server. Enable http_enable in computercraft-server.toml.")
+end
+
+local baseUrl = "https://raw.githubusercontent.com/TheTip47/cc-computer-scripts/music/"
 
 local files = {
     "dashboard.lua",
-    "playlist.lua",
     "playmp3.lua",
+    "playlist.lua",
     "update.lua"
 }
 
+term.clear()
+term.setCursorPos(1, 1)
 print("=== Synchronizing cc-computer-scripts Repository ===")
 
 for _, filename in ipairs(files) do
