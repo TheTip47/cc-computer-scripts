@@ -6,7 +6,7 @@ if not http then
     error("HTTP API is disabled on this server. Enable http_enable in computercraft-server.toml.")
 end
 
-local baseUrl = "https://raw.githubusercontent.com/TheTip47/cc-computer-scripts/music/"
+local baseUrl = "https://raw.githubusercontent.com/TheTip47/cc-computer-scripts/main/"
 
 local files = {
     "dashboard.lua",
