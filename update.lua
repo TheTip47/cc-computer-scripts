@@ -4,6 +4,7 @@
 local baseUrl = "https://raw.githubusercontent.com/TheTip47/cc-computer-scripts/main/"
 
 local files = {
+    "dashboard.lua",
     "playlist.lua",
     "playmp3.lua",
     "update.lua"
